@@ -7,57 +7,114 @@ import jinja2
 
 from google.appengine.ext import db
 
+# set up the jinja , let it know where template is and load it
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
                                autoescape = True)
 
 def render_str(template, **params):
+    """
+        helper function to format string to specific place in templete
+    """
     t = jinja_env.get_template(template)
     return t.render(params)
 
 class BlogHandler(webapp2.RequestHandler):
+    """ Summary of  BlogHandler class : 
+        Base case for other blog page
+
+    """    
     def write(self, *a, **kw):
+        """
+            get the content from parameter and write it to html
+        """
         self.response.out.write(*a, **kw)
 
     def render_str(self, template, **params):
+        """
+            format string to specific place in templete
+        """
         return render_str(template, **params)
 
     def render(self, template, **kw):
+        """
+            call write() and reder_str()
+            render the templete with given parameter
+        """
         self.write(self.render_str(template, **kw))
 
 def render_post(response, post):
+    """
+        render the post page html
+    """
     response.out.write('<b>' + post.subject + '</b><br>')
     response.out.write(post.content)
 
 class MainPage(BlogHandler):
+    """ Summary of  MainPage class : 
+        Main page that respond to a request with welcome
+        message
+    """  
   def get(self):
+    """
+        write message "Hello, Udacity" to main page
+    """
       self.write('Hello, Udacity!')
 
 ##### blog stuff
 
 def blog_key(name = 'default'):
+    """
+        for datastore use, create a key with 'blog/[name]'
+    """
     return db.Key.from_path('blogs', name)
 
 class Post(db.Model):
+    """ Summary of Post class : 
+        Class represent the post entry
+
+
+    """ 
+    # properties that blog post entry has 
     subject = db.StringProperty(required = True)
     content = db.TextProperty(required = True)
-    created = db.DateTimeProperty(auto_now_add = True)
-    last_modified = db.DateTimeProperty(auto_now = True)
+    created = db.DateTimeProperty(auto_now_add = True) # make time up-to-date
+    last_modified = db.DateTimeProperty(auto_now = True) 
 
     def render(self):
-        self._render_text = self.content.replace('\n', '<br>')
+        """
+            reder post html page
+        """
+        self._render_text = self.content.replace('\n', '<br>') # deal with new line
         return render_str("post.html", p = self)
 
 class BlogFront(BlogHandler):
+    """ Summary of  BlogFront class : 
+        handler for blog/
+
+    """  
     def get(self):
+        """
+            look up all the ten most recent created post
+        """
         posts = db.GqlQuery("select * from Post order by created desc limit 10")
         self.render('front.html', posts = posts)
 
 class PostPage(BlogHandler):
+    """ Summary of  PostPage class : 
+        handler for particular post page
+
+    """  
     def get(self, post_id):
+        """
+            get method for PostPage
+            Parameter :
+                post_id is passed from url
+        """
         key = db.Key.from_path('Post', int(post_id), parent=blog_key())
         post = db.get(key)
 
+        # if use request a non-exist post, render 404 error
         if not post:
             self.error(404)
             return
@@ -65,17 +122,29 @@ class PostPage(BlogHandler):
         self.render("permalink.html", post = post)
 
 class NewPost(BlogHandler):
+    """ Summary of NewPost class : 
+        New post page handler
+
+    """  
     def get(self):
+        """
+            render the newpost.html
+        """
         self.render("newpost.html")
 
     def post(self):
+        """
+            post method to create a new post
+        """
         subject = self.request.get('subject')
         content = self.request.get('content')
 
+        # if user enter good subject and content, redirect them to new post page
         if subject and content:
             p = Post(parent = blog_key(), subject = subject, content = content)
-            p.put()
+            p.put() # store the post element into database
             self.redirect('/blog/%s' % str(p.key().id()))
+        # otherwise, render an error page    
         else:
             error = "subject and content, please!"
             self.render("newpost.html", subject=subject, content=content, error=error)
@@ -84,10 +153,20 @@ class NewPost(BlogHandler):
 
 ###### Unit 2 HW's
 class Rot13(BlogHandler):
+    """ Summary of Rot13 class : 
+        Rot13 page handler
+        
+    """  
     def get(self):
+        """
+            get method to render rot13-form.html
+        """
         self.render('rot13-form.html')
 
     def post(self):
+        """
+            post method to receive the rot13 form
+        """
         rot13 = ''
         text = self.request.get('text')
         if text:
@@ -95,7 +174,7 @@ class Rot13(BlogHandler):
 
         self.render('rot13-form.html', text = rot13)
 
-
+# use regular expression to validate username, password and email
 USER_RE = re.compile(r"^[a-zA-Z0-9_-]{3,20}$")
 def valid_username(username):
     return username and USER_RE.match(username)
@@ -109,11 +188,20 @@ def valid_email(email):
     return not email or EMAIL_RE.match(email)
 
 class Signup(BlogHandler):
+    """ Summary of Signup class : 
+        handler for Signup page
 
+    """  
     def get(self):
+        """
+            get method to render signup-form.html        
+        """
         self.render("signup-form.html")
 
     def post(self):
+        """
+            post method to process signup form
+        """
         have_error = False
         username = self.request.get('username')
         password = self.request.get('password')
@@ -144,13 +232,22 @@ class Signup(BlogHandler):
             self.redirect('/unit2/welcome?username=' + username)
 
 class Welcome(BlogHandler):
+    """ Summary of Welcome class : 
+        Handler for welcome page 
+    """  
     def get(self):
+        """
+            get method to render welcome.html if user signup
+            successfully, otherwise redirect user back to signup
+            page 
+        """
         username = self.request.get('username')
         if valid_username(username):
             self.render('welcome.html', username = username)
         else:
             self.redirect('/unit2/signup')
 
+# route the url to specific web handler class
 app = webapp2.WSGIApplication([('/', MainPage),
                                ('/unit2/rot13', Rot13),
                                ('/unit2/signup', Signup),
