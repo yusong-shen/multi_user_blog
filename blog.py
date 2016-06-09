@@ -55,11 +55,8 @@ class MainPage(BlogHandler):
         Main page that respond to a request with welcome
         message
     """  
-  def get(self):
-    """
-        write message "Hello, Udacity" to main page
-    """
-      self.write('Hello, Udacity!')
+    def get(self):
+        self.write('Hello, Udacity!')
 
 ##### blog stuff
 
@@ -72,7 +69,6 @@ def blog_key(name = 'default'):
 class Post(db.Model):
     """ Summary of Post class : 
         Class represent the post entry
-
 
     """ 
     # properties that blog post entry has 
@@ -150,30 +146,6 @@ class NewPost(BlogHandler):
             self.render("newpost.html", subject=subject, content=content, error=error)
 
 
-
-###### Unit 2 HW's
-class Rot13(BlogHandler):
-    """ Summary of Rot13 class : 
-        Rot13 page handler
-        
-    """  
-    def get(self):
-        """
-            get method to render rot13-form.html
-        """
-        self.render('rot13-form.html')
-
-    def post(self):
-        """
-            post method to receive the rot13 form
-        """
-        rot13 = ''
-        text = self.request.get('text')
-        if text:
-            rot13 = text.encode('rot13')
-
-        self.render('rot13-form.html', text = rot13)
-
 # use regular expression to validate username, password and email
 USER_RE = re.compile(r"^[a-zA-Z0-9_-]{3,20}$")
 def valid_username(username):
@@ -249,9 +221,8 @@ class Welcome(BlogHandler):
 
 # route the url to specific web handler class
 app = webapp2.WSGIApplication([('/', MainPage),
-                               ('/unit2/rot13', Rot13),
-                               ('/unit2/signup', Signup),
-                               ('/unit2/welcome', Welcome),
+                               ('/signup', Signup),
+                               ('/welcome', Welcome),
                                ('/blog/?', BlogFront),
                                ('/blog/([0-9]+)', PostPage),
                                ('/blog/newpost', NewPost),
