@@ -1,5 +1,8 @@
 import os
 import re
+import random
+import hashlib
+import hmac
 from string import letters
 
 import webapp2
@@ -11,6 +14,24 @@ from google.appengine.ext import db
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
                                autoescape = True)
+
+secret = 'g9823weuorhfnovkd'
+
+
+def make_secure_val(val):
+    """
+        hash a value with secret phrase to make it more secure
+    """
+    return '%s|%s' % (val, hmac.new(secret, val).hexdigest())
+
+def check_secure_val(secure_val):
+    """
+        check if a given value match correct format, if not return None
+    """
+    val = secure_val.split('|')[0]
+    if secure_val == make_secure_val(val):
+        return val
+
 
 def render_str(template, **params):
     """
@@ -43,6 +64,44 @@ class BlogHandler(webapp2.RequestHandler):
         """
         self.write(self.render_str(template, **kw))
 
+    def set_secure_cookie(self, name, val):
+        """
+            set a cookie with secure value
+        """
+        cookie_val = make_secure_val(val)
+        self.response.headers.add_header(
+            'Set-Cookie',
+            '%s=%s; Path=/' % (name, cookie_val))
+
+    def read_secure_cookie(self, name):
+        """
+            read a given cookie, check if it match correct format
+            if so, return cookie_val, otherwise return false
+        """
+        cookie_val = self.request.cookies.get(name)
+        return cookie_val and check_secure_val(cookie_val)
+
+    def login(self, user):
+        """
+
+        """
+        self.set_secure_cookie('user_id', str(user.key().id()))
+
+    def logout(self):
+        """
+
+        """
+        self.response.headers.add_header('Set-Cookie', 'user_id=; Path=/')
+
+    def initialize(self, *a, **kw):
+        """
+            a function called by GAE before every request.
+            check if user cookie exists, if so, store the actual user object
+        """
+        webapp2.RequestHandler.initialize(self, *a, **kw)
+        uid = self.read_secure_cookie('user_id')
+        self.user = uid and User.by_id(int(uid))
+
 def render_post(response, post):
     """
         render the post page html
@@ -57,6 +116,84 @@ class MainPage(BlogHandler):
     """  
     def get(self):
         self.write('Hello, Udacity!')
+
+
+##### user stuff
+def make_salt(length = 5):
+    """
+        make a salt : a random 5 character phrase by default
+    """
+    return ''.join(random.choice(letters) for x in xrange(length))
+
+def make_pw_hash(name, pw, salt = None):
+    """
+        make a hashed salted password
+    """
+    if not salt:
+        salt = make_salt()
+    h = hashlib.sha256(name + pw + salt).hexdigest()
+    return '%s,%s' % (salt, h)
+
+def valid_pw(name, password, h):
+    """
+        check if a password is valid
+    """
+    salt = h.split(',')[0]
+    return h == make_pw_hash(name, password, salt)
+
+def users_key(group = 'default'):
+    """
+        create the ancestor element in the database to store
+        all the users
+    """
+    return db.Key.from_path('users', group)
+
+class User(db.Model):
+    """
+        A class that represent user object
+    """
+    # user's attributes
+    name = db.StringProperty(required = True)
+    pw_hash = db.StringProperty(required = True)
+    email = db.StringProperty()
+
+    # similar to static method in Java
+    @classmethod
+    def by_id(cls, uid):
+        """
+            look up user by its id
+        """
+        return User.get_by_id(uid, parent = users_key())
+
+    @classmethod
+    def by_name(cls, name):
+        """
+            look up user by its name
+        """
+        u = User.all().filter('name =', name).get()
+        return u
+
+    @classmethod
+    def register(cls, name, pw, email = None):
+        """
+            create a new user object
+        """
+        pw_hash = make_pw_hash(name, pw)
+        return User(parent = users_key(),
+                    name = name,
+                    pw_hash = pw_hash,
+                    email = email)
+
+    @classmethod
+    def login(cls, name, pw):
+        """
+
+        """
+        u = cls.by_name(name)
+        if u and valid_pw(name, pw, u.pw_hash):
+            return u
+
+
 
 ##### blog stuff
 
@@ -163,6 +300,12 @@ class Signup(BlogHandler):
     """ Summary of Signup class : 
         handler for Signup page
 
+        Attributes :
+            username : a string represent username
+            password : a string represent hashed password
+            verify : a bool value represent if verified
+            email : a string represent email address
+
     """  
     def get(self):
         """
@@ -175,33 +318,69 @@ class Signup(BlogHandler):
             post method to process signup form
         """
         have_error = False
-        username = self.request.get('username')
-        password = self.request.get('password')
-        verify = self.request.get('verify')
-        email = self.request.get('email')
+        self.username = self.request.get('username')
+        self.password = self.request.get('password')
+        self.verify = self.request.get('verify')
+        self.email = self.request.get('email')
 
-        params = dict(username = username,
-                      email = email)
+        params = dict(username = self.username,
+                      email = self.email)
 
-        if not valid_username(username):
+        if not valid_username(self.username):
             params['error_username'] = "That's not a valid username."
             have_error = True
 
-        if not valid_password(password):
+        if not valid_password(self.password):
             params['error_password'] = "That wasn't a valid password."
             have_error = True
-        elif password != verify:
+        elif self.password != self.verify:
             params['error_verify'] = "Your passwords didn't match."
             have_error = True
 
-        if not valid_email(email):
+        if not valid_email(self.email):
             params['error_email'] = "That's not a valid email."
             have_error = True
 
         if have_error:
             self.render('signup-form.html', **params)
         else:
-            self.redirect('/unit2/welcome?username=' + username)
+            self.done()
+
+    def done(self, *a, **kw):
+        """
+            base method need to be override
+        """
+        raise NotImplementedError
+
+
+class Register(Signup):
+    """
+        Inherit from Signup base class
+    """
+    def done(self):
+        """
+            method invoked when sign up input is valid
+            if user sign up successfully, make them login and redirect
+            them to blog page
+        """
+        #make sure the user doesn't already exist
+        u = User.by_name(self.username)
+        if u:
+            msg = 'That user already exists.'
+            self.render('signup-form.html', error_username = msg)
+        else:
+            u = User.register(self.username, self.password, self.email)
+            u.put()
+
+            self.login(u)
+            self.redirect('/blog')
+
+class Login():
+    pass
+
+class Logout():
+    pass
+                                
 
 class Welcome(BlogHandler):
     """ Summary of Welcome class : 
@@ -213,18 +392,19 @@ class Welcome(BlogHandler):
             successfully, otherwise redirect user back to signup
             page 
         """
-        username = self.request.get('username')
-        if valid_username(username):
-            self.render('welcome.html', username = username)
+        if self.user:
+            self.render('welcome.html', username = self.user.name)
         else:
-            self.redirect('/unit2/signup')
+            self.redirect('/signup')
 
 # route the url to specific web handler class
 app = webapp2.WSGIApplication([('/', MainPage),
-                               ('/signup', Signup),
+                               ('/signup', Register),
                                ('/welcome', Welcome),
                                ('/blog/?', BlogFront),
                                ('/blog/([0-9]+)', PostPage),
                                ('/blog/newpost', NewPost),
+                               ('/login', Login),
+                               ('/logout', Logout),
                                ],
                               debug=True)
