@@ -115,7 +115,7 @@ class MainPage(BlogHandler):
         message
     """  
     def get(self):
-        self.write('Hello, Udacity!')
+        self.render('index.html')
 
 
 ##### user stuff
