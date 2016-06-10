@@ -83,13 +83,13 @@ class BlogHandler(webapp2.RequestHandler):
 
     def login(self, user):
         """
-
+            set a secure cookie 'user_id' = user object's datastore key
         """
         self.set_secure_cookie('user_id', str(user.key().id()))
 
     def logout(self):
         """
-
+            delete the user cookie content
         """
         self.response.headers.add_header('Set-Cookie', 'user_id=; Path=/')
 
@@ -163,14 +163,14 @@ class User(db.Model):
         """
             look up user by its id
         """
-        return User.get_by_id(uid, parent = users_key())
+        return cls.get_by_id(uid, parent = users_key())
 
     @classmethod
     def by_name(cls, name):
         """
             look up user by its name
         """
-        u = User.all().filter('name =', name).get()
+        u = cls.all().filter('name =', name).get()
         return u
 
     @classmethod
@@ -187,7 +187,8 @@ class User(db.Model):
     @classmethod
     def login(cls, name, pw):
         """
-
+            if user's user name exist and has valid password,
+            return that user
         """
         u = cls.by_name(name)
         if u and valid_pw(name, pw, u.pw_hash):
@@ -230,7 +231,8 @@ class BlogFront(BlogHandler):
         """
             look up all the ten most recent created post
         """
-        posts = db.GqlQuery("select * from Post order by created desc limit 10")
+        # posts = db.GqlQuery("select * from Post order by created desc limit 10")
+        posts = greetings = Post.all().order('-created')
         self.render('front.html', posts = posts)
 
 class PostPage(BlogHandler):
@@ -263,7 +265,10 @@ class NewPost(BlogHandler):
         """
             render the newpost.html
         """
-        self.render("newpost.html")
+        if self.user:
+            self.render("newpost.html")
+        else:
+            self.redirect("/login")
 
     def post(self):
         """
@@ -375,11 +380,41 @@ class Register(Signup):
             self.login(u)
             self.redirect('/blog')
 
-class Login():
-    pass
 
-class Logout():
-    pass
+class Login(BlogHandler):
+    """
+        Handler for login page
+    """
+    def get(self):
+        """
+            reder login-form.html
+        """
+        self.render('login-form.html')
+
+    def post(self):
+        """
+            if user log in successfully, redirect them to blog page
+            otherwise, re-render login-form
+        """
+        username = self.request.get('username')
+        password = self.request.get('password')
+
+        # User class login function
+        u = User.login(username, password)
+        if u:
+            self.login(u) # BlogHandler login function
+            self.redirect('/blog')
+        else:
+            msg = 'Invalid login'
+            self.render('login-form.html', error = msg)
+
+class Logout(BlogHandler):
+    """
+        Handler for logout page
+    """
+    def get(self):
+        self.logout()
+        self.redirect('/blog')
                                 
 
 class Welcome(BlogHandler):
